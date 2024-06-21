@@ -37,7 +37,7 @@ void yargs
         })
         .option("download-timeout", {
           type: "number",
-          default: 60,
+          default: 240,
           describe:
             "This number indicates the maximum amount of time the bot has to wait for a file to be downloaded. (in minutes)."
         })
@@ -53,6 +53,11 @@ void yargs
           describe:
             "This number indicates the delay to type a new character. (in miliseconds)."
         })
+        .option("modified-hours", {
+          type: "number",
+          default: 2,
+          describe: "Сколько часов должно было пройти с момента последней модификации для того чтобы бэкапить (в часах)"
+        })
         .demandOption("e", "Argument `-e | --figma-email` is required.")
         .demandOption("p", "Argument `-p | --figma-password` is required.")
         .demandOption("t", "Argument `-t | --figma-token` is required.")
@@ -63,6 +68,7 @@ void yargs
         "download-timeout": downloadTimeout,
         "interaction-delay": interactionDelay,
         "typing-delay": typingDelay,
+        "modified-hours": diffHoursWasModified,
         e: authEmail,
         p: authPassword,
         t: authToken,
@@ -75,6 +81,7 @@ void yargs
         downloadTimeout: downloadTimeout * 60 * 1000,
         interactionDelay: interactionDelay * 1000,
         figmaAccessToken: authToken,
+        diffHoursWasModified: diffHoursWasModified,
         debug,
         typingDelay
       }).start();

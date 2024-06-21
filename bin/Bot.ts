@@ -3,12 +3,13 @@ import clui from "clui";
 import fs from "fs";
 import path from "path";
 import puppeteer, { Browser, Page } from "puppeteer";
-import { BACKUP_DIR, COOKIES_PATH, ROOT_DIR } from "./constants";
+import { BACKUP_DIR, CONFIG_PATH, COOKIES_PATH, ROOT_DIR } from "./constants";
 import { AuthorizationError, BackupError } from "./errors";
 import FileSystemCookiesProvider from "./FileSystemCookiesProvider";
 import {
   fetchProject,
   goToFilePage,
+  isNeedBackupByModifiedDate,
   log,
   parseLoginFormError,
   saveLocalCopy,
@@ -33,6 +34,7 @@ export interface IBotOptions {
   interactionDelay?: number;
   downloadTimeout?: number;
   typingDelay?: number;
+  diffHoursWasModified?: number;
 }
 
 export type Cookie = puppeteer.Protocol.Network.CookieParam;
@@ -48,6 +50,11 @@ export interface ICookiesProvider {
   setCookies: (cookies: Cookies) => Promise<void>;
 }
 
+export interface IFileConfigProvider {
+  getConfig: () => Promise<IBotOptions | null>;
+  setConfig: (config: IBotOptions) => Promise<void>;
+}
+
 const SESSION_DATA: SessionData = { cookies: null, date: null };
 
 export default class Bot {
@@ -59,6 +66,7 @@ export default class Bot {
   private _interactionDelay: NonNullable<IBotOptions["interactionDelay"]>;
   private _downloadTimeout: NonNullable<IBotOptions["downloadTimeout"]>;
   private _typingDelay: NonNullable<IBotOptions["typingDelay"]>;
+  private _diffHoursWasModified: NonNullable<IBotOptions["diffHoursWasModified"]>;
 
   private _debug: NonNullable<IBotOptions["debug"]>;
 
@@ -70,9 +78,10 @@ export default class Bot {
       projectsIds,
       figmaAccessToken,
       debug = false,
-      downloadTimeout = 30 * 1000,
+      downloadTimeout = 60 * 1000,
       interactionDelay = 2000,
-      typingDelay = 100
+      typingDelay = 100,
+      diffHoursWasModified = 2
     } = options;
 
     this._authData = authData;
@@ -80,6 +89,7 @@ export default class Bot {
     this._interactionDelay = interactionDelay;
     this._downloadTimeout = downloadTimeout;
     this._typingDelay = typingDelay;
+    this._diffHoursWasModified = diffHoursWasModified;
 
     this._projectsIds = projectsIds;
     this._figmaAccessToken = figmaAccessToken;
@@ -162,11 +172,17 @@ export default class Bot {
     }
   }
 
+  /* Возвращает true, если last_modified меньше прошедшего количества часов требуемого для бэкапа */
+  private _isNeedBackupByModifiedDate = (date: string) => {
+    return isNeedBackupByModifiedDate(date, this._diffHoursWasModified);
+  };
+
   private async _backupFile(
-    file: { name: string; id: string },
+    file: { name: string; id: string, lastModified: string },
     projectName: string
   ): Promise<void> {
     if (!this._browser) return;
+    if (!this._isNeedBackupByModifiedDate(file.lastModified)) return;
 
     const page: Page = await this._browser.newPage();
     page.setDefaultNavigationTimeout(60 * 1000);
@@ -176,14 +192,15 @@ export default class Bot {
     log(chalk.red(">") + chalk.bold(` Backing up the file(${file.name})...`));
 
     spinner.start();
-    await waitAndNavigate(page, goToFilePage(page, file.id));
+    await waitAndNavigate(page, goToFilePage(page, file.id), this._downloadTimeout);
     spinner.stop();
 
     spinner.message("\t. Waiting for the page to be loaded...");
 
     spinner.start();
     await page.waitForFunction(
-      () => !document.querySelector('[class*="progress_bar--outer"]')
+      () => !document.querySelector("[class*=\"progress_bar--outer\"]"),
+      { timeout: this._downloadTimeout }
     );
     spinner.stop();
 
@@ -202,7 +219,7 @@ export default class Bot {
 
     log(
       chalk.red("\t>") +
-        chalk.bold(` Saving a local copy of the file(${file.name})...`)
+      chalk.bold(` Saving a local copy of the file(${file.name})...`)
     );
     await saveLocalCopy(page, file, {
       interactionDelay: this._interactionDelay,
@@ -212,9 +229,7 @@ export default class Bot {
   }
 
   private async _backupProject(projectId: string): Promise<void> {
-    const spinner = new Spinner(
-      `> Fetching the project(${projectId}) files...`
-    );
+    const spinner = new Spinner(`> Fetching the project(${projectId}) files...`);
 
     spinner.start();
     const project = await fetchProject(projectId, this._figmaAccessToken);
@@ -223,7 +238,8 @@ export default class Bot {
 
     const files = project.files.map(file => ({
       name: file.name,
-      id: file.key
+      id: file.key,
+      lastModified: file.last_modified
     }));
 
     for (const file of files) await this._backupFile(file, projectName);
@@ -264,6 +280,7 @@ export default class Bot {
 
     if (!fs.existsSync(ROOT_DIR)) fs.mkdirSync(ROOT_DIR);
     if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR);
+    if (!fs.existsSync(CONFIG_PATH)) fs.mkdirSync(BACKUP_DIR);
     if (fs.existsSync(COOKIES_PATH)) fs.rmSync(COOKIES_PATH);
 
     log(chalk.red.bold(" Starting the backup task..."));

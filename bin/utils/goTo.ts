@@ -5,7 +5,7 @@ const goTo = async (page: Page, targetURL: string) => {
   if (page.url().includes(targetURL)) return;
 
   await page.goto(targetURL);
-  await waitForRedirects(page, { timeout: 5000 });
+  await waitForRedirects(page, { timeout: 60000 });
 
   if (!page.url().includes(targetURL)) throw new Error(`Page loading failed.`);
 };

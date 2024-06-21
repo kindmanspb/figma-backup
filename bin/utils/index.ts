@@ -16,3 +16,4 @@ export { default as timer } from "./timer";
 export { default as wait } from "./wait";
 export { default as waitAndNavigate } from "./waitAndNavigate";
 export { default as waitForRedirects } from "./waitForRedirects";
+export { default as isNeedBackupByModifiedDate } from "./isNeedBackupByModifiedDate";

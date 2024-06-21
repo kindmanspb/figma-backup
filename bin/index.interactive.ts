@@ -5,18 +5,21 @@ import clear from "clear";
 import { validate as checkEmailValidity } from "email-validator";
 import figlet from "figlet";
 import inquirer from "inquirer";
-import Bot from "./Bot";
-import { VERSION } from "./constants";
+import Bot, { IBotOptions } from "./Bot";
+import { ROOT_DIR, VERSION } from "./constants";
 import { log } from "./utils";
+import FileConfigProvider from "./FileConfigProvider";
+import fs from "fs";
 
 interface Data {
   email: string;
   password: string;
-  accessToken: string;
+  figmaAccessToken: string;
   projectsIds: string;
   downloadTimeout: number;
   interactionDelay: number;
   typingDelay: number;
+  diffHoursWasModified: number;
 }
 
 const displayTitle = () => {
@@ -60,7 +63,7 @@ const askForData = async () => {
       }
     },
     {
-      name: "accessToken",
+      name: "figmaAccessToken",
       message: "Enter the figma access token:",
       validate: value => {
         if (!value || (<string>value).length === 0)
@@ -101,28 +104,56 @@ const askForData = async () => {
       ].join("\n"),
       default: 100,
       type: "number"
+    },
+    {
+      name: "diffHoursWasModified",
+      message: [
+        "Enter how many hours have passed since the last modification (in hours):",
+        "(This number indicates is backup needed.)"
+      ].join("\n"),
+      default: 2,
+      type: "number"
     }
   ]);
 };
 
-const startBot = async (data: Data) => {
+const dataToBotConstructorParams = (data: Data): IBotOptions => {
+  const authData = { email: data.email, password: data.password };
+  const projectsIds = data.projectsIds.split(" ");
+  return {
+    authData,
+    projectsIds,
+    figmaAccessToken: data.figmaAccessToken,
+    downloadTimeout: data.downloadTimeout * 1000,
+    interactionDelay: data.interactionDelay * 1000,
+    typingDelay: data.typingDelay,
+    diffHoursWasModified: data.diffHoursWasModified
+  };
+};
+
+const startBot = async () => {
+  if (!fs.existsSync(ROOT_DIR)) fs.mkdirSync(ROOT_DIR);
   clear();
 
   log(`${chalk.magenta(figlet.textSync("START"))}\n`);
+  
+  const fileConfigProvider = new FileConfigProvider();
 
-  await new Bot({
-    authData: { email: data.email, password: data.password },
-    figmaAccessToken: data.accessToken,
-    projectsIds: data.projectsIds.split(" "),
-    downloadTimeout: data.downloadTimeout * 60 * 1000,
-    interactionDelay: data.interactionDelay * 1000,
-    typingDelay: data.typingDelay
-  }).start();
+  log(chalk.red(">") + chalk.bold(` Reading the file config...`));
+
+  const config = await fileConfigProvider.getConfig() || dataToBotConstructorParams(await askForData());
+  
+  await fileConfigProvider.setConfig(
+    config
+  );
+
+
+  await new Bot(config).start();
 };
 
 const run = async () => {
   displayTitle();
-  await startBot(await askForData());
+  await startBot();
 };
 
 void run();

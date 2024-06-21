@@ -3,7 +3,7 @@ import goTo from "./goTo";
 
 const goToFilePage = async (page: Page, fileId: string) => {
   try {
-    await goTo(page, `https://www.figma.com/file/${fileId}`);
+    await goTo(page, `https://www.figma.com/design/${fileId}`);
   } catch (e) {
     throw new Error(`File with id "${fileId}" page loading failed!`);
   }
